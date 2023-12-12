@@ -1,8 +1,9 @@
-require 5.006;
+require 5.010; # Pod::Man requires this
 package Pod::Perldoc::ToMan;
 use strict;
 use warnings;
 use parent qw(Pod::Perldoc::BaseTo);
+use POSIX qw( WNOHANG );
 
 use vars qw($VERSION);
 $VERSION = '3.28';
@@ -146,6 +147,12 @@ sub _get_podman_switches {
     #
     #push @switches, 'utf8' => 1;
 
+    # mandoc handles UTF-8 input just fine.
+	if ( $self->_is_mandoc ) {
+		push @switches, 'utf8' => 1;
+	}
+
+
 	$self->debug( "Pod::Man switches are [@switches]\n" );
 
 	return @switches;
@@ -209,12 +216,6 @@ sub _have_groff_with_utf8 {
 	$version ge $minimum_groff_version;
 	}
 
-sub _have_mandoc_with_utf8 {
-	my( $self ) = @_;
-
-       $self->_is_mandoc and not system 'mandoc -Tlocale -V > /dev/null 2>&1';
-	}
-
 sub _collect_nroff_switches {
 	my( $self ) = shift;
 
@@ -225,6 +226,10 @@ sub _collect_nroff_switches {
 		my $c = $cols * 39 / 40;
 		$cols = $c > $cols - 2 ? $c : $cols -2;
 		push @render_switches, '-rLL=' . (int $c) . 'n' if $cols > 80;
+		}
+
+	if( $self->_is_mandoc ) {
+		push @render_switches, '-Owidth=' . $self->_get_columns;
 		}
 
 	# I hear persistent reports that adding a -c switch to $render
@@ -242,7 +247,6 @@ sub _get_device_switches {
 	   if( $self->_is_nroff  )             { qw()              }
 	elsif( $self->_have_groff_with_utf8 )  { qw(-Kutf8 -Tutf8) }
 	elsif( $self->_is_ebcdic )             { qw(-Tcp1047)      }
-	elsif( $self->_have_mandoc_with_utf8 ) { qw(-Tlocale)      }
 	elsif( $self->_is_mandoc )             { qw()              }
 	else                                   { qw(-Tlatin1)      }
 	}
@@ -276,7 +280,7 @@ sub _is_ebcdic {
 
 	return 0;
 	}
-	
+
 sub _filter_through_nroff {
 	my( $self ) = shift;
 	$self->debug( "Filtering through " . $self->__nroffer() . "\n" );
@@ -290,10 +294,10 @@ sub _filter_through_nroff {
     my @render_switches = $self->_collect_nroff_switches;
 
     if ( $switches ) {
-        # Eliminate whitespace 
+        # Eliminate whitespace
         $switches =~ s/\s//g;
 
-        # Then separate the switches with a zero-width positive 
+        # Then separate the switches with a zero-width positive
         # lookahead on the dash.
         #
         # See:
@@ -357,6 +361,11 @@ sub _filter_through_nroff {
 	$self->debug( sprintf "Done reading. Output is %d bytes\n",
 		length $done
 		);
+
+	my $kid;
+	do {
+        $kid = waitpid(-1, WNOHANG);
+    } while $kid > 0;
 
 	if( $? ) {
 		$self->warn( "Error from pipe to $render!\n" );
@@ -550,12 +559,11 @@ merchantability or fitness for a particular purpose.
 
 =head1 AUTHOR
 
-Current maintainer: Mark Allen C<< <mallen@cpan.org> >>
+Current maintainer: brian d foy C<< <briandfoy@pobox.com> >>
 
 Past contributions from:
-brian d foy C<< <bdfoy@cpan.org> >>
-Adriano R. Ferreira C<< <ferreira@cpan.org> >>,
-Sean M. Burke C<< <sburke@cpan.org> >>
+Adriano R. Ferreira C<< <adriano@ferreira.pm> >>,
+Sean M. Burke
 
 =cut
 

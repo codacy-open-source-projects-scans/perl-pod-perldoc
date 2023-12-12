@@ -1,4 +1,4 @@
-use 5.006;  # we use some open(X, "<", $y) syntax
+use 5.010; # podlaters and Pod::Man require this
 
 package Pod::Perldoc;
 use strict;
@@ -12,7 +12,7 @@ use File::Spec::Functions qw(catfile catdir splitdir);
 use vars qw($VERSION @Pagers $Bindir $Pod2man
   $Temp_Files_Created $Temp_File_Lifetime
 );
-$VERSION = '3.28';
+$VERSION = '3.28_01';
 
 #..........................................................................
 
@@ -345,7 +345,7 @@ sub program_name {
     \A
     perl
       (?: doc | func | faq | help | op | toc | var # Camel 3
-      ) 
+      )
     (?: -? v? \d+ \. \d+ (?:\. \d+)? )? # possible version
     (?: \. (?: bat | exe | com ) )?    # possible extension
     \z
@@ -486,7 +486,7 @@ sub init_formatter_class_list {
 
   $self->opt_M_with('Pod::Perldoc::ToPod');   # the always-there fallthru
   $self->opt_o_with('text');
-  $self->opt_o_with('term') 
+  $self->opt_o_with('term')
     unless $self->is_mswin32 || $self->is_dos || $self->is_amigaos
        || !($ENV{TERM} && (
               ($ENV{TERM} || '') !~ /dumb|emacs|none|unknown/i
@@ -521,7 +521,7 @@ sub process {
     return $self->usage_brief  unless  @{ $self->{'args'} };
     $self->options_reading;
     $self->pagers_guessing;
-    $self->aside(sprintf "$0 => %s v%s\n", ref($self), $self->VERSION);
+    $self->aside(sprintf "%s => %s v%s\n", $0, ref($self), $self->VERSION);
     $self->drop_privs_maybe unless ($self->opt_U || $self->opt_F);
     $self->options_processing;
 
@@ -770,7 +770,7 @@ sub options_processing {
         $self->{'podidx'} = $podidx;
     }
 
-    $self->{'output_to_stdout'} = 1  if  $self->opt_T or ! -t STDOUT;
+    $self->{'output_to_stdout'} = 1    if  $self->opt_T  or  ! -t STDOUT  or  ($ENV{TERM} // '') eq 'dumb';
 
     $self->options_sanity;
 
@@ -845,6 +845,7 @@ sub grand_search_init {
             if ($response->{success}) {
                 my ($fh, $filename) = File::Temp::tempfile(UNLINK => 1);
                 $fh->print($response->{content});
+                $fh->flush;
                 push @found, $filename;
                 ($self->{podnames}{$filename} =
                   m{.*/([^/#?]+)} ? uc $1 : "UNKNOWN")
@@ -1112,7 +1113,7 @@ sub search_perlvar {
     my $found = 0;
     my $inheader = 1;
     my $inlist = 0;
-    while (<$fh>) {  
+    while (<$fh>) {
         last if /^=head2 Error Indicators/;
         # \b at the end of $` and friends borks things!
         if ( m/^=item\s+$search_re\s/ )  {
@@ -1181,8 +1182,8 @@ sub search_perlop {
     next if $skip;
 
     # strategy is to capture the previous line until we get a match on X<$thingy>
-    # if the current line contains X<$thingy>, then we push "=over", the previous line, 
-    # the current line and keep pushing current line until we see a ^X<some-other-thing>, 
+    # if the current line contains X<$thingy>, then we push "=over", the previous line,
+    # the current line and keep pushing current line until we see a ^X<some-other-thing>,
     # then we chop off final line from @$pod and add =back
     #
     # At that point, Bob's your uncle.
@@ -1590,7 +1591,7 @@ sub minus_f_nocase {   # i.e., do like -f, but without regard to case
 
      my($self, $dir, $file) = @_;
      my $path = catfile($dir,$file);
-     return $path if -f $path and -r _;
+     return $path if -e $path and -r _;
 
      if(!$self->opt_i
         or $self->is_vms or $self->is_mswin32
@@ -1598,7 +1599,7 @@ sub minus_f_nocase {   # i.e., do like -f, but without regard to case
      ) {
         # On a case-forgiving file system, or if case is important,
     #  that is it, all we can do.
-    $self->warn( "Ignored $path: unreadable\n" ) if -f _;
+    $self->warn( "Ignored $path: unreadable\n" ) if -e _;
     return '';
      }
 
@@ -1643,8 +1644,8 @@ sub minus_f_nocase {   # i.e., do like -f, but without regard to case
 
         push @p, $cip;
         my $p_filespec = catfile(@p);
-        return $p_filespec if -f $p_filespec and -r _;
-        $self->warn( "Ignored $p_filespec: unreadable\n" ) if -f _;
+        return $p_filespec if -e $p_filespec and -r _;
+        $self->warn( "Ignored $p_filespec: unreadable\n" ) if -e _;
     }
      }
      return "";
@@ -1673,9 +1674,9 @@ sub pagers_guessing {
         push @pagers, qw( less.exe more.com< );
         unshift @pagers, $ENV{PAGER}  if $ENV{PAGER};
     }
-    elsif ( $self->is_amigaos) { 
+    elsif ( $self->is_amigaos) {
       push @pagers, qw( /SYS/Utilities/MultiView /SYS/Utilities/More /C/TYPE );
-      unshift @pagers, "$ENV{PAGER}" if $ENV{PAGER}; 
+      unshift @pagers, "$ENV{PAGER}" if $ENV{PAGER};
     }
     else {
         if ($self->is_os2) {
@@ -1810,6 +1811,12 @@ sub containspod {
         return 0;
     }
 
+    if ( -p $file )
+    {
+        $self->warn( "$file is a PIPE/FIFO; assuming it contains POD\n" ) if DEBUG or $self->opt_D;
+        return 1;
+    }
+
     local($_);
     my $fh = $self->open_fh("<", $file);
     while (<$fh>) {
@@ -1927,14 +1934,14 @@ sub page {  # apply a pager to the output file
         #  many many corners of the OS don't like it.  So we
         #  have to force it to be "\" to make everyone happy.
 
-	# if we are on an amiga convert unix path to an amiga one 
+	# if we are on an amiga convert unix path to an amiga one
 	$output =~ s/^\/(.*)\/(.*)/$1:$2/ if $self->is_amigaos;
 
         foreach my $pager (@pagers) {
             $self->aside("About to try calling $pager $output\n");
             if ($self->is_vms) {
                 last if system("$pager $output") == 0;
-	    } elsif($self->is_amigaos) { 
+	    } elsif($self->is_amigaos) {
                 last if system($pager, $output) == 0;
             } else {
                 my $formatter = $self->{'formatter_class'};
@@ -1955,7 +1962,7 @@ sub searchfor {
     my($self, $recurse,$s,@dirs) = @_;
     $s =~ s!::!/!g;
     $s = VMS::Filespec::unixify($s) if $self->is_vms;
-    return $s if -f $s && $self->containspod($s);
+    return $s if -e $s && $self->containspod($s);
     $self->aside( "Looking for $s in @dirs\n" );
     my $ret;
     my $i;
@@ -2140,11 +2147,11 @@ merchantability or fitness for a particular purpose.
 
 =head1 AUTHOR
 
-Current maintainer: Mark Allen C<< <mallen@cpan.org> >>
+Current maintainer: brian d foy C<< <briandfoy@pobox.com> >>
 
 Past contributions from:
-brian d foy C<< <bdfoy@cpan.org> >>
-Adriano R. Ferreira C<< <ferreira@cpan.org> >>,
-Sean M. Burke C<< <sburke@cpan.org> >>
+Adriano R. Ferreira C<< <adriano@ferreira.pm> >>,
+Sean M. Burke
+
 
 =cut

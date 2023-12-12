@@ -1,3 +1,8 @@
+use strict;
+use warnings;
+
+use lib qw(t/lib);
+use TestUtils;
 
 use File::Spec;
 use FindBin qw($Bin);
@@ -6,17 +11,15 @@ use IPC::Open3;
 use Test::More;
 use Config;
 
-my $pid = undef;
-my $stdout = undef;
-my $stderr = undef;
-
 # get path to perldoc exec in a hopefully platform neutral way..
 my ($volume, $bindir, undef) = File::Spec->splitpath($Bin);
-my $perldoc = File::Spec->catpath($volume,$bindir, File::Spec->catfile(qw(blib script perldoc)));
+my $perldoc = perldoc_path();
+
 my @dir = ($bindir,"lib","Pod");
 my $podpath = File::Spec->catdir(@dir);
 my $good_podfile = File::Spec->catpath($volume,$podpath,"Perldoc.pm");
 my $bad_podfile = File::Spec->catpath($volume,$podpath,"asdfsdaf.pm");
+
 if ($ENV{PERL_CORE}) {
     $perldoc = File::Spec->catfile('..','..','utils',
                                    ($Config{usecperl}?'c':'').'perldoc');
@@ -25,57 +28,32 @@ if ($ENV{PERL_CORE}) {
     $bad_podfile  = File::Spec->catfile(@dir,"asdfsdaf.pm");
 }
 
-plan tests => 7;
-
-# First, look for something that should be there
-
-eval{
-
-$pid = open3(\*CHLD_IN,\*CHLD_OUT1,\*CHLD_ERR1,"$^X " .$perldoc." ".$good_podfile);
-
-};
-
-is(length($@),0,"open succeeded"); # returns '' not undef
-ok(defined($pid),"got process id");
-
-#gather STDOUT
-while(<CHLD_OUT1>){
- $stdout .=$_;
+# If the files are under /root, maybe in a container, we might not
+# be able to see them after dropping privileges.
+if( $^O ne 'MSWin32' and ($> == 0 or $< == 0) ) {
+	plan skip_all => 'Refusing to run under root';
+}
+else {
+	plan tests => 2;
 }
 
-#check STDOUT
-like($stdout,qr/Look up Perl documentation/,"got expected output in STDOUT");
 
-while(<CHLD_ERR1>){
- $stderr .=$_;
-}
 
-#is($stderr,undef,"no output to STDERR as expected");
+subtest "good file" => sub {
+	my $run = run_perldoc( $good_podfile );
+	ok( $run->{success}, "$perldoc ran successfully" )
+		or diag( "run failed: " . dumper($run) );
 
-# Then look for something that should not be there
-$stdout = undef;
-$stderr = undef;
+	like( $run->{output}, qr/Look up Perl documentation/, "got expected output in STDOUT" );
+	};
 
-eval{
+subtest "bad file" => sub {
+	my $run = run_perldoc( $bad_podfile );
+	ok( $run->{success}, "$perldoc ran successfully" )
+		or diag( "run failed: " . dumper($run) );
 
-$pid = open3(\*CHLD_IN,\*CHLD_OUT2,\*CHLD_ERR2,"$^X " .$perldoc." ".$bad_podfile);
+	is( $run->{output}, '', "no output to STDOUT is empty" );
+	like( $run->{error}, qr/No documentation/, "got expected output in STDERR" );
+	};
 
-};
-
-is(length($@),0,"open succeeded"); # returns '' not undef
-ok(defined($pid),"got process id");
-
-#gather STDOUT
-while(<CHLD_OUT2>){
- $stdout .=$_;
-}
-
-#check STDOUT
-is($stdout,undef,"no output to STDOUT as expected");
-
-while(<CHLD_ERR2>){
- $stderr .=$_;
-}
-
-like($stderr,qr/No documentation/,"got expected output in STDERR");
-
+done_testing();

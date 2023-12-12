@@ -18,7 +18,7 @@ sub indent    { shift->_perldoc_elem('indent'  , @_) }
 sub loose     { shift->_perldoc_elem('loose'   , @_) }
 sub quotes    { shift->_perldoc_elem('quotes'  , @_) }
 sub sentence  { shift->_perldoc_elem('sentence', @_) }
-sub width     { 
+sub width     {
     my $self = shift;
     $self->_perldoc_elem('width' , @_) ||
     $self->_get_columns_from_manwidth  ||
@@ -54,7 +54,22 @@ sub _maybe_modify_environment {
 
 }
 
-sub _get_stty { `stty -a` }
+sub _get_stty {
+
+  if ( !-t STDIN && -e "/dev/tty" ) {
+     # I went with this more-baroque method because `local *STDIN`
+     # doesn't stay localized during:  return `stty -a`;
+
+     open my $OLDFH, '<&' => \*STDIN or die "Can't dup STDIN\n";
+     open *STDIN, '<' => "/dev/tty";
+     my $retval = `stty -a`;
+     open *STDIN, '<&' => $OLDFH;
+     return $retval;
+  }
+
+  ### Else...
+  return `stty -a`;
+}
 
 sub _get_columns_from_stty {
 	my $output = $_[0]->_get_stty;
@@ -164,6 +179,6 @@ See http://dev.perl.org/licenses/ for more information.
 
 =head1 AUTHOR
 
-Mark Allen C<< <mallen@cpan.org> >>
+Jade Allen
 
 =cut
