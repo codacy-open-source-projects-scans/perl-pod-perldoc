@@ -1,0 +1,26 @@
+#!include_default
+
+\.DS_Store
+\.gitignore
+\.git
+blib
+Pod-.*
+Makefile$
+pm_to_blib
+.releaserc
+\.gz$
+\.bak
+\.orig
+nytprof
+cover_db
+podman\.out.*
+MYMETA*
+\.old$
+\.github/
+
+# This doesn't test anything, but maybe I'm wrong
+t/01_about_verbose.t
+
+# for now
+xt/
+util/perldoc-bug
